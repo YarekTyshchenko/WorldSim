@@ -261,10 +261,10 @@ namespace WorldSim
 
         public override void Step()
         {
-            if (Food > 0 && Parts > 100)
+            if (Food > 0 && Parts > 10)
             {
                 Food--;
-                Parts -= 100;
+                Parts -= 10;
                 Ships++;
             }
         }

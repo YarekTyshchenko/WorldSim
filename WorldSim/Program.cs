@@ -25,11 +25,10 @@ namespace WorldSim
 
     class Program
     {
+        public static readonly Random random = new Random(42);
+
         static void Main(string[] args)
         {
-            var random = new Random(42);
-            Point RandomPoint() => new Point(random.Next(0, 100), random.Next(0, 100));
-
             var stations = new List<Station>
             {
                 // Raw
@@ -59,6 +58,8 @@ namespace WorldSim
                 Task.Delay(100).Wait();
             }
         }
+
+        public static Point RandomPoint() => new Point(random.Next(0, 100), random.Next(0, 100));
     }
 
     public record Contract(
@@ -77,7 +78,7 @@ namespace WorldSim
             this.stations = stations;
             this.captains = new List<Captain>
             {
-                new Captain(new Point(0, 0), 1000, 1000),
+                new Captain(Program.RandomPoint(), 1000, 1000),
             };
         }
 
@@ -98,12 +99,13 @@ namespace WorldSim
                     Console.Error.WriteLine($"Contract created {contract}");
                 }
 
-                if (station is not Refinery && station.Fuel < maxAmount)
-                {
-                    var contract = new Contract(station, Product.Fuel, maxAmount - station.Fuel, Station.LogPrice(station.Fuel, maxAmount));
-                    Console.Error.WriteLine($"Contract created {contract}");
-                    contracts.Add(contract);
-                }
+                // Fuel contracts
+                // if (station is not Refinery && station.Fuel < maxAmount)
+                // {
+                //     var contract = new Contract(station, Product.Fuel, maxAmount - station.Fuel, Station.LogPrice(station.Fuel, maxAmount));
+                //     Console.Error.WriteLine($"Contract created {contract}");
+                //     contracts.Add(contract);
+                // }
 
                 Contract? contract2 = null;
                 switch (station)
@@ -136,6 +138,7 @@ namespace WorldSim
             // each captain
             foreach (var captain in captains)
             {
+                captain.idleDays++;
                 var maxCargo = 1000000;
                 // Find most profitable route
                 var stationToBuyAverageFuel = stations
@@ -216,11 +219,27 @@ namespace WorldSim
             {
                 station.Step();
                 Console.WriteLine($"Station {station} Food {station.Food} Fuel {station.Fuel}, Output: {station.GetAvailableOutput()}, Input: {station.GetAvailableInput()}, Cash: {station.Cash}");
+                // if (station is Shipyard {Ships: > 1} shipyard)
+                // {
+                //     shipyard.Ships -= 1;
+                //     if (captains.All(x => x.Position != shipyard.Position))
+                //     {
+                //         captains.Add(new Captain(shipyard.Position, 1000, 1000));
+                //     }
+                // }
             }
             foreach (var captain in captains)
             {
+                // if (captain.idleDays > 10)
+                // {
+                //     Console.Error.WriteLine($"Captain {captain} idle for more than 10 days, retiring");
+                //     var shipyard = (Shipyard)stations.Find(x => x is Shipyard);
+                //     shipyard.Ships += 1;
+                // }
                 Console.WriteLine($"Captain {captain} has {captain.Fuel} Fuel, {captain.Cash} Cash");
             }
+
+            // captains = captains.Where(x => x.idleDays < 10).ToList();
             Console.WriteLine($"Average fuel cost is {averageFuelPrice}, Total fuel available {totalAvailableFuel}");
         }
     }
@@ -232,6 +251,7 @@ namespace WorldSim
         public double Fuel;
         private int maxFuel = 1000;
         private int loadedCargo = 0;
+        public int idleDays = 0;
         private Product loadedProduct;
 
         public Captain(Point position, int cash, int fuel)
@@ -244,6 +264,7 @@ namespace WorldSim
 
         public void GoTo(Station st)
         {
+            idleDays = 0;
             var n = this.Position.Distance(st.Position);
             this.Position = st.Position;
             this.Fuel -= n;
