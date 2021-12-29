@@ -5,24 +5,44 @@
 namespace WorldSim
 {
     using System;
+    using System.Collections.Generic;
     using System.Drawing;
 
+    // 1 Food => 10 Gas
+    // 1 Gas + 1 Food => 10 Fuel
+    
+    // Cost:
+    // 1 Gas = 0.1 Food
+    // 1 Fuel = 0.11 Food
+    
+    // Buy Cost:
+    // 1 Gas = Max 0.1
+    // Sell Cost:
+    // 1 Gas = Min 0.1
+    // Behold = Margin
     public enum Product
     {
-        Metal,
         Gas,
         Food,
         Fuel,
-        Part,
-        Ship,
+    }
+
+    public static class Ext
+    {
+        public static double ProductToPrice(this Product product) => product switch
+        {
+            Product.Gas => 0.1,
+            Product.Food => 1,
+            Product.Fuel => 0.11,
+            _ => throw new ArgumentOutOfRangeException(nameof(product), product, null)
+        };
     }
 
     public abstract class Station
     {
         public Point Position { get; }
-        public int Food { get; set; }
-        public int Fuel { get; set; }
-        public double Cash { get; set; }
+        public int Food { get; set; } = 10;
+        public double Money { get; set; } = 1000;
         public abstract Product GetOutputProduct();
 
         public Station(Point position)
@@ -32,118 +52,47 @@ namespace WorldSim
 
         public abstract void Step();
 
-        // min price 1
-        // max price 100
-        // amount: 0 = price 100
-        // amount 1 = price 90
-        // amount 2 = price 80
-        // amount 5 = price 50
-        // amount 20 = price 10
-        public static double LogPrice(int amountAvailable, int maxAmount)
-        {
-            return 1 * (1 / Math.Log((double)amountAvailable / maxAmount + 1.01));
-            var r =  maxAmount / Math.Log(Math.Min(amountAvailable, 2));
-            Console.Error.WriteLine($"Calculating price: {amountAvailable} available, {maxAmount} max, = {r}");
-            return r;
-        }
+        public abstract (int bought, double cost) BuyOutput(int contractAmount);
 
-
-        public abstract int Load(int contractAmount);
-
-        public virtual void Unload(Product product, int loadedCargo)
-        {
-            switch (product)
-            {
-                case Product.Food:
-                    Food += loadedCargo;
-                    break;
-                case Product.Fuel:
-                    Fuel += loadedCargo;
-                    break;
-            }
-        }
-
-
-        public int BuyFuel(int want)
-        {
-            var bought = Math.Min(want, Fuel);
-            Fuel -= bought;
-            return bought;
-        }
+        public abstract double DeliverInput(Product product, int amount);
 
         public int GetAvailableOutput() => this switch
         {
             Collector collector => collector.Gas,
-            Factory factory => factory.Parts,
             Farm farm => farm.Food,
-            Mine mine => mine.Metal,
             Refinery refinery => refinery.Fuel,
-            Shipyard shipyard => shipyard.Ships,
             _ => throw new ArgumentOutOfRangeException()
         };
 
         public int? GetAvailableInput() => this switch
         {
-            Factory factory => factory.Metal,
+            Collector collector => collector.Food,
             Refinery refinery => refinery.Gas,
-            Shipyard shipyard => shipyard.Parts,
             _ => null
         };
-    }
 
-    public class Mine : Station
-    {
-
-        public int Metal { get; set; }
-        public override Product GetOutputProduct() => Product.Metal;
-
-        public Mine(Point position) : base(position)
+        // Adjust lower than ProductToPrice
+        public virtual double BidPrice(Product product) => this switch
         {
-        }
-
-
-        public override void Step()
-        {
-            if (Food > 0)
+            Collector collector => Product.Food.ProductToPrice(),
+            Farm farm => 0,
+            Refinery refinery => product switch
             {
-                Food -= 1;
-                Metal += 10;
-            }
-        }
+                Product.Food => Product.Food.ProductToPrice(),
+                Product.Gas  => Product.Gas.ProductToPrice(),
+                _ => throw new ArgumentOutOfRangeException(nameof(product), product, null)
+            },
+            _ => throw new ArgumentOutOfRangeException()
+        };
 
-        public override int Load(int contractAmount)
+        // Adjust higher than ProductToPrice
+        public virtual double AskPrice() => this switch
         {
-            var bought = Math.Min(contractAmount, Metal);
-            Metal -= bought;
-            return bought;
-        }
-    }
-
-    public class Collector : Station
-    {
-        public int Gas { get; set; }
-        public override Product GetOutputProduct() => Product.Gas;
-
-        public override void Step()
-        {
-            if (Food > 0)
-            {
-                Food--;
-                Gas += 10;
-            }
-        }
-
-        /// <inheritdoc />
-        public override int Load(int contractAmount)
-        {
-            var bought = Math.Min(contractAmount, Gas);
-            Gas -= bought;
-            return bought;
-        }
-
-        public Collector(Point position) : base(position)
-        {
-        }
+            Collector collector => Product.Gas.ProductToPrice() + 0.1,
+            Farm farm => Product.Food.ProductToPrice() + 0.1,
+            Refinery refinery => Product.Fuel.ProductToPrice() + 0.1,
+            _ => throw new ArgumentOutOfRangeException()
+        };
     }
 
     public class Farm : Station
@@ -156,11 +105,25 @@ namespace WorldSim
         }
 
         /// <inheritdoc />
-        public override int Load(int contractAmount)
+        public override double AskPrice()
+        {
+            return 0;
+        }
+
+        /// <inheritdoc />
+        public override (int bought, double cost) BuyOutput(int contractAmount)
         {
             var bought = Math.Min(contractAmount, Food);
+            var price = this.AskPrice() * contractAmount;
             Food -= bought;
-            return bought;
+            Money += price;
+            return (bought, price);
+        }
+
+        /// <inheritdoc />
+        public override double DeliverInput(Product product, int amount)
+        {
+            throw new InvalidOperationException();
         }
 
         /// <inheritdoc />
@@ -169,45 +132,86 @@ namespace WorldSim
         }
     }
 
-    public class Factory : Station
+    public class Collector : Station
     {
-        public int Metal { get; set; }
-        public int Parts { get; set; }
-        public override Product GetOutputProduct() => Product.Part;
+        public int Gas { get; set; }
+        // Total cost of all input stock
+        // Used to work out how to price the output to ensure
+        // profit is always made
+        public double TotalBuyCost;
+        public int DaysWithoutBuy;
+        public int DaysWithoutSell;
+        public override Product GetOutputProduct() => Product.Gas;
 
-
+        // 1 Food => 10 Gas
         public override void Step()
         {
-            if (Food > 0 && Metal > 0)
+            DaysWithoutBuy++;
+            DaysWithoutSell++;
+            if (Food > 0)
             {
                 Food--;
-                Metal--;
-                Parts += 10;
+                Gas += 10;
             }
         }
 
         /// <inheritdoc />
-        public override int Load(int contractAmount)
+        public override double BidPrice(Product product)
         {
-            var bought = Math.Min(contractAmount, Parts);
-            Parts -= bought;
-            return bought;
+            var x = base.BidPrice(product);
+            var a =  x * (1 - Math.Log(Math.Min(1000, Food+1), 1000));
+            Console.Error.WriteLine($"Bid price for {product} is {a} on {this}");
+            return a;
         }
 
         /// <inheritdoc />
-        public override void Unload(Product product, int loadedCargo)
+        public override double AskPrice()
         {
+            var futureGas = Food * 10 + Gas;
+            if (futureGas == 0)
+            {
+                return base.AskPrice();
+            }
+
+            Console.Error.WriteLine($"Total buy cost is {TotalBuyCost} for {futureGas} Future gas: Ask price: {TotalBuyCost / futureGas}");
+            // Between 0.1 and Infinity
+            return TotalBuyCost / futureGas;
+        }
+
+        // Cost of 1 Gas is 0.1
+        // Ensure station always makes profit
+        public override (int bought, double cost) BuyOutput(int contractAmount)
+        {
+            var bought = Math.Min(contractAmount, Gas);
+            var price = this.AskPrice() * bought;
+            // Subtract the money made from the Total buy cost of input
+            TotalBuyCost -= price;
+            
+            DaysWithoutBuy = 0;
+            Gas -= bought;
+            Money += price;
+            return (bought, price);
+        }
+
+        /// <inheritdoc />
+        public override double DeliverInput(Product product, int amount)
+        {
+            var p = this.BidPrice(product);
+            var price = this.BidPrice(product) * amount;
+            TotalBuyCost += price;
+            DaysWithoutSell = 0;
             switch (product)
             {
-                case Product.Metal:
-                    Metal += loadedCargo;
-                    break;
+                case Product.Food:
+                    Food += amount;
+                    Money -= price;
+                    return price;
             }
-            base.Unload(product, loadedCargo);
+
+            throw new InvalidOperationException();
         }
 
-        /// <inheritdoc />
-        public Factory(Point position) : base(position)
+        public Collector(Point position) : base(position)
         {
         }
     }
@@ -215,6 +219,8 @@ namespace WorldSim
     public class Refinery : Station
     {
         public int Gas { get; set; }
+        public int Fuel { get; set; }
+        public double TotalBuyCost;
         public override Product GetOutputProduct() => Product.Fuel;
 
 
@@ -233,64 +239,59 @@ namespace WorldSim
         {
         }
 
-        public override int Load(int contractAmount)
+        /// <inheritdoc />
+        public override double BidPrice(Product product)
         {
-            var bought = Math.Min(contractAmount, Fuel);
-            Fuel -= bought;
-            return bought;
+            var x = base.BidPrice(product);
+            var stock = product switch
+            {
+                Product.Gas => Gas,
+                Product.Food => Food,
+            };
+            var a =  x * (1 - Math.Log(Math.Min(1000, stock+1), 1000));
+            Console.Error.WriteLine($"Bid price for {product} is {a} on {this}");
+            return a;
         }
 
         /// <inheritdoc />
-        public override void Unload(Product product, int loadedCargo)
+        public override double AskPrice()
         {
+            var futureFuel = Math.Min(Gas * 10, Food * 10) + Fuel;
+            if (futureFuel == 0) return base.AskPrice();
+
+            Console.Error.WriteLine($"Total buy cost is {TotalBuyCost} for {futureFuel} Future gas: Ask price: {TotalBuyCost / futureFuel}");
+            // Between 0.1 and Infinity
+            return TotalBuyCost / futureFuel;
+
+        }
+
+        public override (int bought, double cost) BuyOutput(int contractAmount)
+        {
+            var bought = Math.Min(contractAmount, Fuel);
+            var price = this.AskPrice() * contractAmount;
+            TotalBuyCost -= price;
+            Fuel -= bought;
+            return (bought, price);
+        }
+
+        /// <inheritdoc />
+        public override double DeliverInput(Product product, int amount)
+        {
+            var price = this.BidPrice(product) * amount;
+            TotalBuyCost += price;
             switch (product)
             {
                 case Product.Gas:
-                    Gas += loadedCargo;
-                    break;
+                    Gas += amount;
+                    Money -= price;
+                    return price;
+                case Product.Food:
+                    Food += amount;
+                    Money -= price;
+                    return price;
             }
-            base.Unload(product, loadedCargo);
-        }
-    }
 
-    public class Shipyard : Station
-    {
-        public int Ships { get; set; }
-        public int Parts { get; set; }
-        public override Product GetOutputProduct() => Product.Ship;
-
-        public override void Step()
-        {
-            if (Food > 0 && Parts > 10)
-            {
-                Food--;
-                Parts -= 10;
-                Ships++;
-            }
-        }
-
-        /// <inheritdoc />
-        public Shipyard(Point position) : base(position)
-        {
-        }
-
-        public override int Load(int contractAmount)
-        {
-            var bought = Math.Min(contractAmount, Ships);
-            Ships -= bought;
-            return bought;
-        }
-
-        /// <inheritdoc />
-        public override void Unload(Product product, int loadedCargo)
-        {
-            switch (product)
-            {
-                case Product.Part:
-                    Parts += loadedCargo;
-                    break;
-            }
-            base.Unload(product, loadedCargo);
+            throw new InvalidOperationException();
         }
     }
 }
