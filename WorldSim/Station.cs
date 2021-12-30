@@ -52,10 +52,10 @@ namespace WorldSim
         public void Step()
         {
             // If we have all the inputs in correct ratios
+            // TODO: Duplicate items will cause problems. GroupBy would fix that.
             if (!Production.Input.Items.All(i => inputs.ContainsKey(i.Product) && inputs[i.Product] > i.Count)) return;
 
             // Remove them, and add the outputs.
-            // TODO: Duplicate items will cause problems
             foreach (var (product, count) in Production.Input.Items)
             {
                 inputs[product] -= count;
@@ -69,12 +69,20 @@ namespace WorldSim
 
         public decimal BidPrice(Product product)
         {
-            return new(1);
+            // Bid price is based on how much stock we have
+            // (should also be based on how much cash we have)
+            var stock = inputs[product];
+            var price = new decimal(1);
+            return price * (decimal)(1 - Math.Log(Math.Min(10, stock + 1), 10));
         }
 
+        // Ask price is based on what we paid for the input
         public decimal AskPrice(Product product)
         {
-            return new decimal(1);
+            var outputPortion = Production.Output.Items.First(x => x.Product == product);
+            var ins = Production.Input.Items.Min(x => inputs[x.Product] / x.Count * outputPortion.Count);
+            var futureOutput = outputs[product] + ins; 
+            return StockCost / futureOutput;
         }
 
         // DeliverInput
@@ -93,6 +101,8 @@ namespace WorldSim
             var bought = Math.Min(outputs[product], count);
             var cost = this.AskPrice(product) * bought;
             Money += cost;
+            StockCost -= count;
+            if (StockCost < 0) StockCost = 0;
             outputs[product] -= bought;
             return (bought, cost);
         }
