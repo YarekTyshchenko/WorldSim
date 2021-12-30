@@ -29,41 +29,50 @@ namespace WorldSim
 
         static void Main(string[] args)
         {
-            var farm = new GenericStation
+            Station Farm()
+            {
+                var f = new Station {Position = RandomPoint(), Money = 1000, Production = new Production(Product.Fuel, Product.Food.Many(3)),};
+                f.inputs[Product.Fuel] = 1000;
+                return f;
+            }
+
+            Station Collector() => new Station
             {
                 Position = RandomPoint(),
                 Money = 1000,
-                Production = new Production(Product.Fuel, Product.Food.Many(10)),
+                Production = new Production(Product.Food, Product.Gas.Many(3))
             };
-            farm.inputs[Product.Fuel] = 1000;
-            var stations = new List<GenericStation>
+
+            Station Refinery() => new Station
+            {
+                Position = RandomPoint(),
+                Money = 1000,
+                Production = new Production(new Ratio(Product.Food, Product.Gas), Product.Fuel.Many(3)),
+            };
+
+            var stations = new List<Station>
             {
                 // Raw
                 // new Mine(RandomPoint()),
-                new GenericStation
-                {
-                    Position = RandomPoint(),
-                    Money = 1000,
-                    Production = new Production(Product.Food, Product.Gas.Many(10))
-                },
-                farm,
+                Collector(),
+                Collector(),
+                Collector(),
+                Farm(),
 
                 // Produced
                 // new Factory(RandomPoint()),
-                new GenericStation
-                {
-                    Position = RandomPoint(),
-                    Money = 1000,
-                    Production = new Production(new Ratio(Product.Food, Product.Gas), Product.Fuel.Many(10)),
-                },
+                Refinery(),
+                Refinery(),
+                Refinery(),
+                Refinery(),
                 // new Shipyard(RandomPoint()),
             };
             var sim = new WorldSim(stations);
             var n = 0;
-            while (n++ < 90000)
+            while (n++ < 10000)
             {
                 sim.Run();
-                Task.Delay(1).Wait();
+                Task.Delay(10).Wait();
             }
         }
 
@@ -71,20 +80,21 @@ namespace WorldSim
     }
 
     public record Contract(
-        GenericStation Destination,
+        Station Destination,
         //Station Source,
         Product Product);
 
     public class WorldSim
     {
-        private List<GenericStation> stations;
+        private List<Station> stations;
         private List<Captain> captains;
 
-        public WorldSim(List<GenericStation> stations)
+        public WorldSim(List<Station> stations)
         {
             this.stations = stations;
             this.captains = new List<Captain>
             {
+                new Captain(Program.RandomPoint(), 1000),
                 new Captain(Program.RandomPoint(), 1000),
             };
         }
@@ -127,7 +137,7 @@ namespace WorldSim
                             var output = p.outputs[contract.Product];
                             var available = Math.Min(100, Math.Min(
                                 output,
-                                bidPrice > 0 ? (int)Math.Floor(contract.Destination.Money / bidPrice) : output));
+                                bidPrice > (decimal) 0.01 ? (int)Math.Floor(contract.Destination.Money / bidPrice) : output));
                             return new
                             {
                                 available,
@@ -206,7 +216,7 @@ namespace WorldSim
             foreach (var station in stations)
             {
                 station.Step();
-                Console.WriteLine($"Station {station.Production} Input: {station.inputs.Where(x => x.Value > 0).Join(",")}, Output: {station.outputs.Where(x => x.Value > 0).Join(",")}, Cash: {station.Money}");
+                Console.WriteLine($"Station {station.Production} Input: {station.inputs.Where(x => x.Value > 0).Join(",")}, Output: {station.outputs.Where(x => x.Value > 0).Join(",")}, Cash: {station.Money}, Stock Cost: {station.StockCost}");
                 // if (station is Shipyard {Ships: > 1} shipyard)
                 // {
                 //     shipyard.Ships -= 1;
@@ -238,7 +248,7 @@ namespace WorldSim
         public Point Position;
         public double Fuel;
 
-        public decimal Money;
+        public decimal Money = 1000;
         //private int maxFuel = 1000;
         private int loadedAmount = 0;
         public int idleDays = 0;
@@ -251,7 +261,7 @@ namespace WorldSim
         }
 
 
-        public void GoTo(GenericStation st)
+        public void GoTo(Station st)
         {
             idleDays = 0;
             var n = this.Position.Distance(st.Position);
@@ -260,7 +270,7 @@ namespace WorldSim
             Console.Error.WriteLine($"Captain went to {st} costing {n} fuel, remaining {this.Fuel}");
         }
 
-        public void Refuel(GenericStation refinery)
+        public void Refuel(Station refinery)
         {
             if (refinery.Production.Output.Items.All(x => x.Product != Product.Fuel)) return;
 
@@ -273,7 +283,7 @@ namespace WorldSim
             Console.Error.WriteLine($"Refuelled at {refinery} for {bought} fuel, at a cost of {cost}");
         }
 
-        public void Load(GenericStation producer, Product product, int contractAmount)
+        public void Load(Station producer, Product product, int contractAmount)
         {
             var (available, cost) = producer.PickupOutput(product, contractAmount);
             Money -= cost;

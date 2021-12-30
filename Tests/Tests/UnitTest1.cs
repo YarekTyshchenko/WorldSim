@@ -45,7 +45,7 @@ namespace Tests
         [Fact]
         public void Test3()
         {
-            var n = new GenericStation
+            var n = new Station
             {
                 Money = 1000,
                 Position = new Point(100, 100),
