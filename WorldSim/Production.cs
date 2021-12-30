@@ -26,7 +26,7 @@ namespace WorldSim
                 : $"{Count} {Product}";
 
         public static implicit operator Portion(Product product) => new(product);
-    };
+    }
 
     public record Ratio(params Portion[] Items)
     {
@@ -38,7 +38,10 @@ namespace WorldSim
 
         public static implicit operator Ratio(Portion portion) =>
             new(portion);
-    };
+
+        public static implicit operator Ratio(Product product) =>
+            new(new Portion(product));
+    }
 
     public record Production(Ratio Input, Ratio Output)
     {
@@ -46,14 +49,6 @@ namespace WorldSim
         public override string ToString()
         {
             return $"({Input}) -> ({Output})";
-        }
-    };
-
-    public class Foo
-    {
-        public void F()
-        {
-            var p = new Production(new Ratio(Product.Gas, Product.Food), Product.Fuel.Many(10));
         }
     }
 }

@@ -29,24 +29,41 @@ namespace WorldSim
 
         static void Main(string[] args)
         {
-            var stations = new List<Station>
+            var farm = new GenericStation
+            {
+                Position = RandomPoint(),
+                Money = 1000,
+                Production = new Production(Product.Fuel, Product.Food.Many(10)),
+            };
+            farm.inputs[Product.Fuel] = 1000;
+            var stations = new List<GenericStation>
             {
                 // Raw
                 // new Mine(RandomPoint()),
-                new Collector(RandomPoint()),
-                new Farm(RandomPoint()),
+                new GenericStation
+                {
+                    Position = RandomPoint(),
+                    Money = 1000,
+                    Production = new Production(Product.Food, Product.Gas.Many(10))
+                },
+                farm,
 
                 // Produced
                 // new Factory(RandomPoint()),
-                new Refinery(RandomPoint()),
+                new GenericStation
+                {
+                    Position = RandomPoint(),
+                    Money = 1000,
+                    Production = new Production(new Ratio(Product.Food, Product.Gas), Product.Fuel.Many(10)),
+                },
                 // new Shipyard(RandomPoint()),
             };
             var sim = new WorldSim(stations);
             var n = 0;
-            while (n++ < 9000)
+            while (n++ < 90000)
             {
                 sim.Run();
-                Task.Delay(10).Wait();
+                Task.Delay(1).Wait();
             }
         }
 
@@ -54,16 +71,16 @@ namespace WorldSim
     }
 
     public record Contract(
-        Station Destination,
+        GenericStation Destination,
         //Station Source,
         Product Product);
 
     public class WorldSim
     {
-        private List<Station> stations;
+        private List<GenericStation> stations;
         private List<Captain> captains;
 
-        public WorldSim(List<Station> stations)
+        public WorldSim(List<GenericStation> stations)
         {
             this.stations = stations;
             this.captains = new List<Captain>
@@ -79,38 +96,21 @@ namespace WorldSim
             // Loop through all stations and generate contracts
             foreach (var station in stations)
             {
-                if (station is not Farm)
-                {
-                    if (station.Money > Product.Food.ProductToPrice())
-                    {
-                        var foodContract = new Contract(station, Product.Food);
-                        contracts.Add(foodContract);
-                    }
-
-                    if (station is Refinery refinery)
-                    {
-                        if (station.Money > Product.Gas.ProductToPrice())
-                        {
-                            var outputContract = new Contract(refinery, Product.Gas);
-                            contracts.Add(outputContract);
-                        }
-                    }
-
-                }
+                contracts.AddRange(station.Production.Input.Items.Select(portion =>
+                    new Contract(station, portion.Product)));
             }
             Console.Error.WriteLine($"Created {contracts.Count} Contracts");
             Console.Error.WriteLine(contracts.Join());
 
-            var totalAvailableFuel = stations
-                .Select(s => s is Refinery refinery ? refinery : null)
-                .Where(s => s != null)
-                .Select(s => s!.Fuel)
+            var refineries = stations
+                .Where(s => s.Production.Output.Items.Any(x => x.Product == Product.Fuel))
+                .ToList();
+            var totalAvailableFuel = refineries
+                .Select(x => x.outputs[Product.Fuel])
                 .Sum();
 
-            var averageFuelPrice = stations
-                .Select(s => s is Refinery refinery ? refinery : null)
-                .Where(s => s != null)
-                .Select(s => s!.AskPrice())
+            var averageFuelPrice = refineries
+                .Select(s => s.AskPrice(Product.Fuel))
                 .Average();
 
             // each captain
@@ -120,13 +120,14 @@ namespace WorldSim
                 // Find most profitable route
                 var routes = contracts
                     .SelectMany(contract => stations
-                        .Where(producer => contract.Product == producer.GetOutputProduct())
+                        .Where(producer => producer.Production.Output.Items.Any(x => x.Product == contract.Product))
                         .Select(p =>
                         {
                             var bidPrice = contract.Destination.BidPrice(contract.Product);
-                            var available = Math.Min(
-                                p.GetAvailableOutput(),
-                                bidPrice > 0 ? (int)Math.Floor(contract.Destination.Money / bidPrice) : p.GetAvailableOutput());
+                            var output = p.outputs[contract.Product];
+                            var available = Math.Min(100, Math.Min(
+                                output,
+                                bidPrice > 0 ? (int)Math.Floor(contract.Destination.Money / bidPrice) : output));
                             return new
                             {
                                 available,
@@ -135,7 +136,7 @@ namespace WorldSim
                                 producer = p,
                                 distanceTotal = captain.Position.Distance(p.Position) +
                                                 p.Position.Distance(contract.Destination.Position),
-                                buyCost = p.AskPrice() * available,
+                                buyCost = p.AskPrice(contract.Product) * available,
                                 sellPayout = contract.Destination.BidPrice(contract.Product) * available,
                             };
                         }))
@@ -143,7 +144,7 @@ namespace WorldSim
                     .Where(x =>
                         x.contract.Destination.Money > x.sellPayout)
                     // Filter out negative contracts
-                    .Where(x => x.sellPayout - x.buyCost - x.distanceTotal * averageFuelPrice > 0)
+                    .Where(x => x.sellPayout - x.buyCost - (decimal)x.distanceTotal * averageFuelPrice > 0)
                     .OrderByDescending(x => x.sellPayout - x.buyCost);
 
                 Console.Error.WriteLine($"Available Routes: {routes.Join()}");
@@ -155,7 +156,7 @@ namespace WorldSim
                 var producer = foundRoute.producer;
 
                 var amountLoaded = foundRoute.available;
-                var fuelCost = foundRoute.distanceTotal * averageFuelPrice;
+                var fuelCost = (decimal)foundRoute.distanceTotal * averageFuelPrice;
                 if (foundRoute.sellPayout - foundRoute.buyCost - fuelCost > 0)
                 {
                     Console.Error.WriteLine(
@@ -176,7 +177,7 @@ namespace WorldSim
                     // Refuel
                     captain.Refuel(producer);
                 }
-                captain.Load(producer, amountLoaded);
+                captain.Load(producer, contract.Product, amountLoaded);
 
                 // go to consumer
                 captain.GoTo(contract.Destination);
@@ -185,11 +186,8 @@ namespace WorldSim
                 // Refuel
                 captain.Refuel(contract.Destination);
 
-                var nearestFuel = stations
-                    .Select(s => s is Refinery refinery ? refinery : null)
-                    .Where(s => s != null)
-                    .Select(x => x!)
-                    .Where(s => s.Fuel > 0)
+                var nearestFuel = refineries
+                    .Where(s => s.outputs[Product.Fuel] > 0)
                     .OrderByDescending(x => x.Position.Distance(captain.Position))
                     .FirstOrDefault();
 
@@ -208,7 +206,7 @@ namespace WorldSim
             foreach (var station in stations)
             {
                 station.Step();
-                Console.WriteLine($"Station {station} Food {station.Food}, Output: {station.GetAvailableOutput()}, Input: {station.GetAvailableInput()}, Cash: {station.Money}");
+                Console.WriteLine($"Station {station.Production} Input: {station.inputs.Where(x => x.Value > 0).Join(",")}, Output: {station.outputs.Where(x => x.Value > 0).Join(",")}, Cash: {station.Money}");
                 // if (station is Shipyard {Ships: > 1} shipyard)
                 // {
                 //     shipyard.Ships -= 1;
@@ -240,7 +238,7 @@ namespace WorldSim
         public Point Position;
         public double Fuel;
 
-        public double Money;
+        public decimal Money;
         //private int maxFuel = 1000;
         private int loadedAmount = 0;
         public int idleDays = 0;
@@ -253,7 +251,7 @@ namespace WorldSim
         }
 
 
-        public void GoTo(Station st)
+        public void GoTo(GenericStation st)
         {
             idleDays = 0;
             var n = this.Position.Distance(st.Position);
@@ -262,24 +260,25 @@ namespace WorldSim
             Console.Error.WriteLine($"Captain went to {st} costing {n} fuel, remaining {this.Fuel}");
         }
 
-        public void Refuel(Station refinery)
+        public void Refuel(GenericStation refinery)
         {
-            if (refinery is not Refinery) return;
+            if (refinery.Production.Output.Items.All(x => x.Product != Product.Fuel)) return;
+
             var want = (int)Math.Floor(1000 - Fuel);
             if (want < 1) return;
 
-            var (bought, cost) = refinery.BuyOutput(want);
+            var (bought, cost) = refinery.PickupOutput(Product.Fuel, want);
             Money -= cost;
             Fuel += bought;
             Console.Error.WriteLine($"Refuelled at {refinery} for {bought} fuel, at a cost of {cost}");
         }
 
-        public void Load(Station producer, int contractAmount)
+        public void Load(GenericStation producer, Product product, int contractAmount)
         {
-            var (available, cost) = producer.BuyOutput(contractAmount);
+            var (available, cost) = producer.PickupOutput(product, contractAmount);
             Money -= cost;
             loadedAmount = available;
-            loadedProduct = producer.GetOutputProduct();
+            loadedProduct = product;
 
             Console.Error.WriteLine($"Captain loaded {available} {loadedProduct} cargo");
         }
