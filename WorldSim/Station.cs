@@ -7,6 +7,7 @@ namespace WorldSim
     using System;
     using System.Collections.Generic;
     using System.Drawing;
+    using System.Linq;
 
     // 1 Food => 10 Gas
     // 1 Gas + 1 Food => 10 Fuel
@@ -20,11 +21,12 @@ namespace WorldSim
     // Sell Cost:
     // 1 Gas = Min 0.1
     // Behold = Margin
-    public enum Product
+
+    public enum StationType
     {
-        Gas,
-        Food,
-        Fuel,
+        Farm,
+        Collector,
+        Refinery,
     }
 
     public static class Ext
@@ -38,10 +40,68 @@ namespace WorldSim
         };
     }
 
+    public class GenericStation
+    {
+        public Point Position { get; init; }
+        public decimal Money { get; set; }
+        public decimal StockCost { get; set; }
+        public Production Production { get; init; }
+        private readonly IDictionary<Product, int> inputs = new Dictionary<Product, int>();
+        private readonly IDictionary<Product, int> outputs = new Dictionary<Product, int>();
+
+        public void Step()
+        {
+            // If we have all the inputs in correct ratios
+            if (!Production.Input.Items.All(i => inputs.ContainsKey(i.Product) && inputs[i.Product] > i.Count)) return;
+
+            // Remove them, and add the outputs.
+            // TODO: Duplicate items will cause problems
+            foreach (var (product, count) in Production.Input.Items)
+            {
+                inputs[product] -= count;
+            }
+
+            foreach (var (product, count) in Production.Output.Items)
+            {
+                outputs[product] += count;
+            }
+        }
+
+        public decimal BidPrice(Product product)
+        {
+            return new(1);
+        }
+
+        public decimal AskPrice(Product product)
+        {
+            return new decimal(1);
+        }
+
+        // DeliverInput
+        public decimal DeliverInput(Product product, int count)
+        {
+            var totalMoney = this.BidPrice(product) * count;
+            Money -= totalMoney;
+            StockCost += totalMoney;
+            inputs[product] += count;
+            return totalMoney;
+        }
+
+        // PickupOutput
+        public (int bought, decimal cost) PickupOutput(Product product, int count)
+        {
+            var bought = Math.Min(outputs[product], count);
+            var cost = this.AskPrice(product) * bought;
+            Money += cost;
+            outputs[product] -= bought;
+            return (bought, cost);
+        }
+    }
+
     public abstract class Station
     {
         public Point Position { get; }
-        public int Food { get; set; } = 10;
+        public int Food { get; set; }
         public double Money { get; set; } = 1000;
         public abstract Product GetOutputProduct();
 
@@ -72,27 +132,10 @@ namespace WorldSim
         };
 
         // Adjust lower than ProductToPrice
-        public virtual double BidPrice(Product product) => this switch
-        {
-            Collector collector => Product.Food.ProductToPrice(),
-            Farm farm => 0,
-            Refinery refinery => product switch
-            {
-                Product.Food => Product.Food.ProductToPrice(),
-                Product.Gas  => Product.Gas.ProductToPrice(),
-                _ => throw new ArgumentOutOfRangeException(nameof(product), product, null)
-            },
-            _ => throw new ArgumentOutOfRangeException()
-        };
+        public abstract double BidPrice(Product product);
 
         // Adjust higher than ProductToPrice
-        public virtual double AskPrice() => this switch
-        {
-            Collector collector => Product.Gas.ProductToPrice() + 0.1,
-            Farm farm => Product.Food.ProductToPrice() + 0.1,
-            Refinery refinery => Product.Fuel.ProductToPrice() + 0.1,
-            _ => throw new ArgumentOutOfRangeException()
-        };
+        public abstract double AskPrice();
     }
 
     public class Farm : Station
@@ -111,10 +154,16 @@ namespace WorldSim
         }
 
         /// <inheritdoc />
+        public override double BidPrice(Product product)
+        {
+            return 0;
+        }
+
+        /// <inheritdoc />
         public override (int bought, double cost) BuyOutput(int contractAmount)
         {
             var bought = Math.Min(contractAmount, Food);
-            var price = this.AskPrice() * contractAmount;
+            var price = this.AskPrice() * bought;
             Food -= bought;
             Money += price;
             return (bought, price);
@@ -158,8 +207,8 @@ namespace WorldSim
         /// <inheritdoc />
         public override double BidPrice(Product product)
         {
-            var x = base.BidPrice(product);
-            var a =  x * (1 - Math.Log(Math.Min(1000, Food+1), 1000));
+            var x = 10;
+            var a =  x * (1 - Math.Log(Math.Min(10, Food+1), 10));
             Console.Error.WriteLine($"Bid price for {product} is {a} on {this}");
             return a;
         }
@@ -170,10 +219,10 @@ namespace WorldSim
             var futureGas = Food * 10 + Gas;
             if (futureGas == 0)
             {
-                return base.AskPrice();
+                return 0.1;
             }
 
-            Console.Error.WriteLine($"Total buy cost is {TotalBuyCost} for {futureGas} Future gas: Ask price: {TotalBuyCost / futureGas}");
+            Console.Error.WriteLine($"Total {this} buy cost is {TotalBuyCost} for {futureGas} Future gas: Ask price: {TotalBuyCost / futureGas:R}");
             // Between 0.1 and Infinity
             return TotalBuyCost / futureGas;
         }
@@ -196,8 +245,8 @@ namespace WorldSim
         /// <inheritdoc />
         public override double DeliverInput(Product product, int amount)
         {
-            var p = this.BidPrice(product);
-            var price = this.BidPrice(product) * amount;
+            var x = this.BidPrice(product);
+            var price = x * amount;
             TotalBuyCost += price;
             DaysWithoutSell = 0;
             switch (product)
@@ -242,13 +291,17 @@ namespace WorldSim
         /// <inheritdoc />
         public override double BidPrice(Product product)
         {
-            var x = base.BidPrice(product);
+            var x = product switch
+            {
+                Product.Food => 10,
+                Product.Gas => 1,
+            };
             var stock = product switch
             {
                 Product.Gas => Gas,
                 Product.Food => Food,
             };
-            var a =  x * (1 - Math.Log(Math.Min(1000, stock+1), 1000));
+            var a =  x * (1 - Math.Log(Math.Min(10, stock+1), 10));
             Console.Error.WriteLine($"Bid price for {product} is {a} on {this}");
             return a;
         }
@@ -257,9 +310,9 @@ namespace WorldSim
         public override double AskPrice()
         {
             var futureFuel = Math.Min(Gas * 10, Food * 10) + Fuel;
-            if (futureFuel == 0) return base.AskPrice();
+            if (futureFuel == 0) return 0.11;
 
-            Console.Error.WriteLine($"Total buy cost is {TotalBuyCost} for {futureFuel} Future gas: Ask price: {TotalBuyCost / futureFuel}");
+            Console.Error.WriteLine($"Total buy cost is {TotalBuyCost} for {futureFuel} Future gas: Ask price: {TotalBuyCost / futureFuel} on {this}");
             // Between 0.1 and Infinity
             return TotalBuyCost / futureFuel;
 
@@ -268,7 +321,7 @@ namespace WorldSim
         public override (int bought, double cost) BuyOutput(int contractAmount)
         {
             var bought = Math.Min(contractAmount, Fuel);
-            var price = this.AskPrice() * contractAmount;
+            var price = this.AskPrice() * bought;
             TotalBuyCost -= price;
             Fuel -= bought;
             return (bought, price);

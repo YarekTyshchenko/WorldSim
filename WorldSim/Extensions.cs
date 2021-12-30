@@ -16,6 +16,7 @@ namespace WorldSim
         public static string Join<K, V>(this IDictionary<K, V> dict) =>
             string.Join("", dict);
 
-        public static string Join<V>(this IEnumerable<V> list) => string.Join("\n", list);
+        public static string Join<V>(this IEnumerable<V> list, string sep = "\n") =>
+            string.Join(sep, list);
     }
 }

@@ -34,24 +34,19 @@ namespace WorldSim
                 // Raw
                 // new Mine(RandomPoint()),
                 new Collector(RandomPoint()),
-                new Collector(RandomPoint()),
-                new Collector(RandomPoint()),
                 new Farm(RandomPoint()),
 
                 // Produced
                 // new Factory(RandomPoint()),
                 new Refinery(RandomPoint()),
-                new Refinery(RandomPoint()),
-                new Refinery(RandomPoint()),
-                new Refinery(RandomPoint()),
                 // new Shipyard(RandomPoint()),
             };
             var sim = new WorldSim(stations);
             var n = 0;
-            while (n++ < 1000)
+            while (n++ < 9000)
             {
                 sim.Run();
-                Task.Delay(100).Wait();
+                Task.Delay(10).Wait();
             }
         }
 
@@ -86,12 +81,19 @@ namespace WorldSim
             {
                 if (station is not Farm)
                 {
-                    var foodContract = new Contract(station, Product.Food);
-                    contracts.Add(foodContract);
+                    if (station.Money > Product.Food.ProductToPrice())
+                    {
+                        var foodContract = new Contract(station, Product.Food);
+                        contracts.Add(foodContract);
+                    }
+
                     if (station is Refinery refinery)
                     {
-                        var outputContract = new Contract(refinery, Product.Gas);
-                        contracts.Add(outputContract);
+                        if (station.Money > Product.Gas.ProductToPrice())
+                        {
+                            var outputContract = new Contract(refinery, Product.Gas);
+                            contracts.Add(outputContract);
+                        }
                     }
 
                 }
@@ -102,49 +104,68 @@ namespace WorldSim
             var totalAvailableFuel = stations
                 .Select(s => s is Refinery refinery ? refinery : null)
                 .Where(s => s != null)
-                .Select(s => s!.Fuel).Sum();
+                .Select(s => s!.Fuel)
+                .Sum();
+
+            var averageFuelPrice = stations
+                .Select(s => s is Refinery refinery ? refinery : null)
+                .Where(s => s != null)
+                .Select(s => s!.AskPrice())
+                .Average();
 
             // each captain
             foreach (var captain in captains)
             {
                 captain.idleDays++;
                 // Find most profitable route
-                var foundRoute = contracts
+                var routes = contracts
                     .SelectMany(contract => stations
                         .Where(producer => contract.Product == producer.GetOutputProduct())
-                        .Select(p => new {
-                            available = p.GetAvailableOutput(),
-                            position = p.Position,
-                            contract,
-                            producer = p,
-                            distanceTotal = captain.Position.Distance(p.Position) + p.Position.Distance(contract.Destination.Position),
-                            buyCost = p.AskPrice() * p.GetAvailableOutput(),
-                            sellPayout = contract.Destination.BidPrice(contract.Product) * p.GetAvailableOutput(),
+                        .Select(p =>
+                        {
+                            var bidPrice = contract.Destination.BidPrice(contract.Product);
+                            var available = Math.Min(
+                                p.GetAvailableOutput(),
+                                bidPrice > 0 ? (int)Math.Floor(contract.Destination.Money / bidPrice) : p.GetAvailableOutput());
+                            return new
+                            {
+                                available,
+                                position = p.Position,
+                                contract,
+                                producer = p,
+                                distanceTotal = captain.Position.Distance(p.Position) +
+                                                p.Position.Distance(contract.Destination.Position),
+                                buyCost = p.AskPrice() * available,
+                                sellPayout = contract.Destination.BidPrice(contract.Product) * available,
+                            };
                         }))
+                    // Filter out contracts that can't pay
                     .Where(x =>
                         x.contract.Destination.Money > x.sellPayout)
-                    //.Where(x => x.sellPayout - x.buyCost > 0)
-                    .OrderByDescending(x => x.sellPayout - x.buyCost)
-                    .FirstOrDefault();
+                    // Filter out negative contracts
+                    .Where(x => x.sellPayout - x.buyCost - x.distanceTotal * averageFuelPrice > 0)
+                    .OrderByDescending(x => x.sellPayout - x.buyCost);
 
+                Console.Error.WriteLine($"Available Routes: {routes.Join()}");
+
+                var foundRoute = routes.FirstOrDefault();
                 Console.Error.WriteLine($"Chosen {foundRoute}");
                 if (foundRoute == null) continue;
                 var contract = foundRoute.contract;
                 var producer = foundRoute.producer;
 
                 var amountLoaded = foundRoute.available;
-                var distance = captain.Position.Distance(producer.Position)
-                               + producer.Position.Distance(contract.Destination.Position);
-                var fuelCost = distance * Product.Fuel.ProductToPrice();
-                var contractPay = amountLoaded * producer.GetOutputProduct().ProductToPrice();
-                if (foundRoute.sellPayout - foundRoute.buyCost - fuelCost < 0)
+                var fuelCost = foundRoute.distanceTotal * averageFuelPrice;
+                if (foundRoute.sellPayout - foundRoute.buyCost - fuelCost > 0)
                 {
-                    Console.Error.WriteLine($"Not worth {foundRoute.buyCost} for {foundRoute.sellPayout} pay to pickup {contract.Product}");
-                    continue;
+                    Console.Error.WriteLine(
+                        $"Route {foundRoute} is good. Fuel cost {fuelCost}");
                 }
                 else
                 {
-                    Console.Error.WriteLine($"It is worth {foundRoute.buyCost} for {foundRoute.sellPayout} pay to pickup {contract.Product}");
+                    Console.Error.WriteLine(
+                        $"Not worth {foundRoute}, fuel cost {fuelCost}");
+                    continue;
                 }
 
                 contracts.Remove(contract);
@@ -163,6 +184,24 @@ namespace WorldSim
                 captain.Unload(contract);
                 // Refuel
                 captain.Refuel(contract.Destination);
+
+                var nearestFuel = stations
+                    .Select(s => s is Refinery refinery ? refinery : null)
+                    .Where(s => s != null)
+                    .Select(x => x!)
+                    .Where(s => s.Fuel > 0)
+                    .OrderByDescending(x => x.Position.Distance(captain.Position))
+                    .FirstOrDefault();
+
+                if (captain.Fuel < 1000 / 2 && nearestFuel != null)
+                {
+                    if (captain.Position != nearestFuel.Position)
+                    {
+                        captain.GoTo(nearestFuel);
+                    }
+
+                    captain.Refuel(nearestFuel);
+                }
             }
 
             // All stations consume their food
@@ -187,11 +226,12 @@ namespace WorldSim
                 //     var shipyard = (Shipyard)stations.Find(x => x is Shipyard);
                 //     shipyard.Ships += 1;
                 // }
-                Console.WriteLine($"Captain {captain} has {captain.Money} in wallet");
+                Console.WriteLine($"Captain {captain} has {captain.Money} in wallet, {captain.Fuel} in tank");
             }
 
             // captains = captains.Where(x => x.idleDays < 10).ToList();
             Console.WriteLine($"Total fuel available {totalAvailableFuel}");
+            Console.WriteLine($"Total cash in the world {stations.Sum(x => x.Money) + captains.Sum(x => x.Money)}");
         }
     }
 
@@ -217,9 +257,7 @@ namespace WorldSim
         {
             idleDays = 0;
             var n = this.Position.Distance(st.Position);
-            //var n = 1;
             this.Position = st.Position;
-            //this.Fuel -= n;
             this.Fuel -= n;
             Console.Error.WriteLine($"Captain went to {st} costing {n} fuel, remaining {this.Fuel}");
         }
@@ -227,7 +265,9 @@ namespace WorldSim
         public void Refuel(Station refinery)
         {
             if (refinery is not Refinery) return;
-            var want = (int)(1000 - Fuel);
+            var want = (int)Math.Floor(1000 - Fuel);
+            if (want < 1) return;
+
             var (bought, cost) = refinery.BuyOutput(want);
             Money -= cost;
             Fuel += bought;
@@ -249,7 +289,6 @@ namespace WorldSim
             var payment = contract.Destination.DeliverInput(loadedProduct, loadedAmount);
             this.Money += payment;
             Console.Error.WriteLine($"Captain unloaded {loadedAmount} {loadedProduct} cargo at {contract.Destination} for {payment} cash, in bank {this.Money}");
-            //Console.Error.WriteLine($"Target station now has {contract.Destination.Food} Food, {contract.Destination.Money} Money");
             loadedAmount = 0;
         }
     }
