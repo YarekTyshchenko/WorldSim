@@ -14,6 +14,10 @@ namespace WorldSim
         public Point Position { get; init; }
         public Production Production { get; init; }
         public string Name { get; set; }
+        public int Capacity = 100;
+
+        /// <inheritdoc />
+        public override string ToString() => Name;
 
         public readonly IDictionary<Product, int> inputs = Enum.GetValues<Product>().ToDictionary(x => x, _ => 0);
         public readonly IDictionary<Product, int> outputs = Enum.GetValues<Product>().ToDictionary(x => x, _ => 0);
@@ -28,6 +32,10 @@ namespace WorldSim
             // TODO: Duplicate items will cause problems. GroupBy would fix that.
             if (!Production.Input.Items.All(i => inputs.ContainsKey(i.Product) && inputs[i.Product] >= i.Count)) return;
 
+            if (outputs.Values.Max() >= Capacity)
+            {
+                return;
+            }
             // Remove them, and add the outputs.
             foreach (var (product, count) in Production.Input.Items)
             {
@@ -65,12 +73,14 @@ namespace WorldSim
         }
 
         // DeliverInput
-        public void DeliverInput(Product product, int count)
+        public int DeliverInput(Product product, int count)
         {
+            var delivered = Math.Min(Capacity - inputs[product], count);
             // var totalMoney = this.BidPrice(product) * count;
             // Money -= totalMoney;
             // StockCost += totalMoney;
-            inputs[product] += count;
+            inputs[product] += delivered;
+            return delivered;
             // return totalMoney;
         }
 

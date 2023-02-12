@@ -9,6 +9,9 @@ namespace WorldSim
         Gas,
         Food,
         Fuel,
+        Metal,
+        Parts,
+        Ship
     }
 
     public static class ProductExt

@@ -2,8 +2,10 @@ digraph G {
     graph [rankdir=LR]
     node [shape=box]
 
-    Refinery -> Fuel [label=produces]
-    GasMine -> Gas [label=mines]
-    Gas -> Ship [label=transported_by]
-    Ship -> Refinery [label=brings_gas]
+    Ship -> Captain
+    Captain -> Salvage [label=destroyed]
+    Captain -> Pirate [label=becomes]
+    Pirate -> Salvage [label=destroyed]
+    Pirate -> Captain [label=reforms]
+    Salvage -> Ship
 }

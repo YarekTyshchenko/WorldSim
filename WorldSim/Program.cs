@@ -21,9 +21,9 @@ namespace WorldSim
                 {
                     Name = name,
                     Position = RandomPoint(),
-                    Production = new Production(Product.Fuel, Product.Food.Many(3)),
+                    Production = new Production(Product.Fuel, Product.Food.Many(6)),
                 };
-                f.inputs[Product.Fuel] = 1000;
+                f.inputs[Product.Fuel] = 100;
                 return f;
             }
 
@@ -41,26 +41,47 @@ namespace WorldSim
                 Production = new Production(new Ratio(Product.Food, Product.Gas), Product.Fuel.Many(3)),
             };
 
+            Station Mine(string name) => new Station
+            {
+                Name = name,
+                Position = RandomPoint(),
+                Production = new Production(new Ratio(Product.Food, Product.Gas), Product.Metal.Many(1)),
+            };
+
+            Station Factory(string name) => new Station
+            {
+                Name = name,
+                Position = RandomPoint(),
+                Production = new Production(new Ratio(Product.Food, Product.Metal, Product.Gas), Product.Parts.Many(3)),
+            };
+            Station Shipyard(string name) => new Station
+            {
+                Name = name,
+                Position = RandomPoint(),
+                Production = new Production(new Ratio(Product.Food.Many(10), Product.Parts.Many(10), Product.Gas.Many(10)), Product.Ship.Many(1)),
+            };
+
+
             var stations = new List<Station>
             {
                 // Raw
-                // new Mine(RandomPoint()),
+                Mine("Mine A"),
                 Collector("Collector A"),
                 Collector("Collector B"),
                 Collector("Collector C"),
                 Farm("Farm A"),
 
                 // Produced
-                // new Factory(RandomPoint()),
+                Factory("Factory A"),
                 Refinery("Refinery A"),
                 Refinery("Refinery B"),
                 Refinery("Refinery C"),
                 Refinery("Refinery D"),
-                // new Shipyard(RandomPoint()),
+                Shipyard("Shipyard A"),
             };
             var sim = new WorldSim(stations);
             var n = 0;
-            while (n++ < 10000)
+            while (n++ < 1000)
             {
                 sim.Run(Random);
                 Task.Delay(100).Wait();
