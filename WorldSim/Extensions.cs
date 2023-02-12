@@ -18,5 +18,21 @@ namespace WorldSim
 
         public static string Join<V>(this IEnumerable<V> list, string sep = "\n") =>
             string.Join(sep, list);
+
+        public static T? RandomElement<T>(this IEnumerable<T> source,
+            Random rng)
+        {
+            var current = default(T);
+            var count = 0;
+            foreach (var element in source)
+            {
+                count++;
+                if (rng.Next(count) == 0)
+                {
+                    current = element;
+                }
+            }
+            return count == 0 ? default : current;
+        }
     }
 }

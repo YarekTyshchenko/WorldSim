@@ -1,0 +1,9 @@
+digraph G {
+    graph [rankdir=LR]
+    node [shape=box]
+
+    Refinery -> Fuel [label=produces]
+    GasMine -> Gas [label=mines]
+    Gas -> Ship [label=transported_by]
+    Ship -> Refinery [label=brings_gas]
+}
