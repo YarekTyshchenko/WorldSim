@@ -11,7 +11,7 @@ public class Captain
     public Point Position;
     public double Fuel;
 
-    //private int maxFuel = 1000;
+    private int maxFuel = 20;
     public int Capacity = 20;
     private int loadedAmount = 0;
     public int idleDays = 0;
@@ -32,17 +32,17 @@ public class Captain
     public void GoTo(Station st)
     {
         idleDays = 0;
-        var n = this.Position.Distance(st.Position);
+        var n = this.Position.Distance(st.Position) / 100;
         this.Position = st.Position;
         this.Fuel -= n;
         Console.Error.WriteLine($"Captain {Name} went to {st} costing {n} fuel, remaining {this.Fuel}");
     }
 
-    public void Refuel(Station refinery)
+    public void TryRefuel(Station refinery)
     {
         if (refinery.Production.Output.Items.All(x => x.Product != Product.Fuel)) return;
 
-        var want = (int)Math.Floor(1000 - Fuel);
+        var want = (int)Math.Floor(maxFuel - Fuel);
         if (want < 1) return;
 
         var bought = refinery.PickupOutput(Product.Fuel, want);
@@ -98,9 +98,13 @@ public class Captain
                 // Sell to consumer
                 captain.Unload(c);
             }
+            else
+            {
+                idleDays++;
+            }
             return;
         }
-        captain.idleDays++;
+
         // Find most profitable route
         var routes = contracts
             .SelectMany(contract => stations
@@ -144,7 +148,12 @@ public class Captain
         // Pick a random first one
         var foundRoute = routes.Where(x => x.available == routes.FirstOrDefault().available).RandomElement(random);
         Console.Error.WriteLine($"[{Name}] Chosen {foundRoute}");
-        if (foundRoute == null) return;
+        if (foundRoute == null)
+        {
+            idleDays++;
+            return;
+        }
+
         var contract = foundRoute.contract;
         var producer = foundRoute.producer;
 
@@ -167,8 +176,8 @@ public class Captain
         {
             // Go to producer
             captain.GoTo(producer);
-            // Refuel
-            // captain.Refuel(producer);
+            // TryRefuel if they have it
+            captain.TryRefuel(producer);
         }
         captain.Load(producer, contract.Product, amountLoaded);
 
@@ -177,21 +186,20 @@ public class Captain
         // Sell to consumer
         captain.Unload(contract);
         // Refuel
-        // captain.Refuel(contract.Destination);
+        captain.TryRefuel(contract.Destination);
 
-        // var nearestFuel = refineries
-        //     .Where(s => s.outputs[Product.Fuel] > 0)
-        //     .OrderByDescending(x => x.Position.Distance(captain.Position))
-        //     .FirstOrDefault();
-        //
-        // if (captain.Fuel < 1000 / 2 && nearestFuel != null)
-        // {
-        //     if (captain.Position != nearestFuel.Position)
-        //     {
-        //         captain.GoTo(nearestFuel);
-        //     }
-        //
-        //     captain.Refuel(nearestFuel);
-        // }
+        var nearestFuel = stations
+            .Where(s => s.outputs[Product.Fuel] > 0)
+            .OrderByDescending(x => x.Position.Distance(captain.Position))
+            .FirstOrDefault();
+
+        if (captain.Fuel < maxFuel / 4 && nearestFuel != null)
+        {
+            if (captain.Position != nearestFuel.Position)
+            {
+                captain.GoTo(nearestFuel);
+            }
+            captain.TryRefuel(nearestFuel);
+        }
     }
 }

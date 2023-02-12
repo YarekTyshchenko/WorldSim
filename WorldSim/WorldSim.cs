@@ -21,10 +21,10 @@ namespace WorldSim
             this.stations = stations;
             this.captains = new List<Captain>
             {
-                new Captain(CapName(), Program.RandomPoint(), 0),
-                new Captain(CapName(), Program.RandomPoint(), 0),
-                new Captain(CapName(), Program.RandomPoint(), 0),
-                new Captain(CapName(), Program.RandomPoint(), 0),
+                new Captain(CapName(), Program.RandomPoint(), 10),
+                new Captain(CapName(), Program.RandomPoint(), 10),
+                new Captain(CapName(), Program.RandomPoint(), 10),
+                new Captain(CapName(), Program.RandomPoint(), 10),
             };
         }
 
@@ -37,7 +37,7 @@ namespace WorldSim
                 contracts.AddRange(station.Production.Input.Items.Select(portion =>
                     new Contract(station, portion.Product)));
             }
-            Console.Error.WriteLine($"Created {contracts.Count} Contracts");
+            Console.Error.WriteLine($"New Step --- Created {contracts.Count} Contracts");
             Console.Error.WriteLine(contracts.Join());
 
             var refineries = stations
@@ -68,7 +68,7 @@ namespace WorldSim
             }
             foreach (var captain in captains)
             {
-                Console.WriteLine($"Captain {captain} has {(int)captain.Fuel} in tank and {captain.Loaded} in hold");
+                Console.WriteLine($"Captain {captain} (idle for {captain.idleDays}) has {(int)captain.Fuel} in tank and {captain.Loaded} in hold");
             }
 
             foreach (var product in Enum.GetValues<Product>())
