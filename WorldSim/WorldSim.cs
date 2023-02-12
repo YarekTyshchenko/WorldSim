@@ -75,6 +75,8 @@ namespace WorldSim
             {
                 Console.WriteLine($"Total {Enum.GetName(product)} {stations.Sum(x => x.outputs[product] + x.inputs[product])}");
             }
+
+            Console.WriteLine($"Unshipped amount: {stations.Sum(x => x.outputs.Sum(o => o.Value))}");
         }
     }
 }

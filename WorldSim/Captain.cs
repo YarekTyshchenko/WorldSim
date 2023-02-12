@@ -93,7 +93,7 @@ public class Captain
                     // Go to producer
                     captain.GoTo(c.Destination);
                     // Refuel
-                    // captain.Refuel(producer);
+                    captain.TryRefuel(c.Destination);
                 }
                 // Sell to consumer
                 captain.Unload(c);
@@ -105,7 +105,7 @@ public class Captain
             return;
         }
 
-        // Find most profitable route
+        // Find most important route
         var routes = contracts
             .SelectMany(contract => stations
                 .Where(producer => producer.Production.Output.Items.Any(x => x.Product == contract.Product))
