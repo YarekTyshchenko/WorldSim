@@ -21,10 +21,8 @@ namespace WorldSim
             this.stations = stations;
             this.captains = new List<Captain>
             {
-                new Captain(CapName(), Program.RandomPoint(), 10),
-                new Captain(CapName(), Program.RandomPoint(), 10),
-                new Captain(CapName(), Program.RandomPoint(), 10),
-                new Captain(CapName(), Program.RandomPoint(), 10),
+                new Captain(stations, CapName(), Program.RandomPoint(), 10),
+                new Captain(stations, CapName(), Program.RandomPoint(), 10),
             };
         }
 
@@ -35,19 +33,15 @@ namespace WorldSim
             foreach (var station in stations)
             {
                 contracts.AddRange(station.Production.Input.Items.Select(portion =>
-                    new Contract(station, portion.Product)));
+                    new Contract(station, portion.Product, station.Production.Output.Items.FirstOrDefault()!)));
             }
             Console.Error.WriteLine($"New Step --- Created {contracts.Count} Contracts");
             Console.Error.WriteLine(contracts.Join());
 
-            var refineries = stations
-                .Where(s => s.Production.Output.Items.Any(x => x.Product == Product.Fuel))
-                .ToList();
-
             // each captain
             foreach (var captain in captains.Shuffled(random))
             {
-                captain.Act(contracts, stations, refineries, random);
+                captain.Act(contracts, stations, random);
             }
 
             // All stations consume their food
@@ -58,12 +52,12 @@ namespace WorldSim
 
             foreach (var station in stations)
             {
-                Console.WriteLine($"Station {station.Production} Input: {station.inputs.Where(x => x.Value > 0).Join(",")}, Output: {station.outputs.Where(x => x.Value > 0).Join(",")}");
+                Console.WriteLine($"Station {station.Name} {station.Production} Input: {station.inputs.Where(x => x.Value > 0).Join(",")}, Output: {station.outputs.Where(x => x.Value > 0).Join(",")}");
 
                 if (station.outputs[Product.Ship] > 0)
                 {
                     station.outputs[Product.Ship] -= 1;
-                    captains.Add(new Captain(CapName(), station.Position, 10));
+                    captains.Add(new Captain(stations, CapName(), station.Position, 10));
                 }
             }
             foreach (var captain in captains)
@@ -77,6 +71,10 @@ namespace WorldSim
             }
 
             Console.WriteLine($"Unshipped amount: {stations.Sum(x => x.outputs.Sum(o => o.Value))}");
+
+            // Total money
+            Console.WriteLine($"Total Captains money: {captains.Select(x => x.Wallet).Combine()}");
+            Console.WriteLine($"Total Stations money: {stations.Select(x => x.Wallet).Combine()}");
         }
     }
 }

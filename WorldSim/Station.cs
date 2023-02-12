@@ -15,6 +15,7 @@ namespace WorldSim
         public Production Production { get; init; }
         public string Name { get; set; }
         public int Capacity = 100;
+        public Wallet Wallet = new();
 
         /// <inheritdoc />
         public override string ToString() => Name;

@@ -47,7 +47,7 @@ namespace Tests
         {
             var n = new Station
             {
-                Money = 1000,
+                // Money = 1000,
                 Position = new Point(100, 100),
                 Production = new Production(new Ratio(Product.Gas, Product.Food), Product.Fuel.Many(10)),
             };

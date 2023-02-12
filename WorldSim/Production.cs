@@ -34,10 +34,8 @@ namespace WorldSim
     public record Ratio(params Portion[] Items)
     {
         /// <inheritdoc />
-        public override string ToString()
-        {
-            return Items.Join(", ");
-        }
+        public override string ToString() =>
+            Items.Join(", ");
 
         public static implicit operator Ratio(Portion portion) =>
             new(portion);
@@ -49,9 +47,9 @@ namespace WorldSim
     public record Production(Ratio Input, Ratio Output)
     {
         /// <inheritdoc />
-        public override string ToString()
-        {
-            return $"({Input}) -> ({Output})";
-        }
+        public override string ToString() =>
+            $"({Input}) -> ({Output})";
+        
+        //public double AsFractionOfOutput
     }
 }

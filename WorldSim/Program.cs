@@ -67,16 +67,16 @@ namespace WorldSim
                 // Raw
                 Mine("Mine A"),
                 Collector("Collector A"),
-                Collector("Collector B"),
-                Collector("Collector C"),
+                // Collector("Collector B"),
+                // Collector("Collector C"),
                 Farm("Farm A"),
 
                 // Produced
                 Factory("Factory A"),
                 Refinery("Refinery A"),
-                Refinery("Refinery B"),
-                Refinery("Refinery C"),
-                Refinery("Refinery D"),
+                // Refinery("Refinery B"),
+                // Refinery("Refinery C"),
+                // Refinery("Refinery D"),
                 Shipyard("Shipyard A"),
             };
             var sim = new WorldSim(stations);
@@ -84,7 +84,7 @@ namespace WorldSim
             while (n++ < 1000)
             {
                 sim.Run(Random);
-                Task.Delay(100).Wait();
+                Task.Delay(1000).Wait();
             }
         }
 

@@ -34,5 +34,8 @@ namespace WorldSim
             }
             return count == 0 ? default : current;
         }
+
+        public static Wallet Combine(this IEnumerable<Wallet> wallets) =>
+            Wallet.Combine(wallets);
     }
 }
