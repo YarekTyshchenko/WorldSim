@@ -14,25 +14,27 @@ public class Captain
 
     private int maxFuel = 20;
     public int Capacity = 20;
-    private int loadedAmount = 0;
+    private decimal loadedAmount = 0;
     public int idleDays = 0;
     private Product loadedProduct;
-    public Wallet Wallet = new();
+    public Wallet Wallet;
+    public decimal Money = 0;
 
     /// <inheritdoc />
     public override string ToString() => Name;
 
-    public Captain(List<Station> stations, string name, Point position, int fuel)
+    public Captain(List<Station> stations, string name, Point position, int fuel, Wallet wallet)
     {
         this.stations = stations;
         this.Name = name;
         this.Position = position;
         this.Fuel = fuel;
+        this.Wallet = wallet;
     }
 
     public Portion Loaded => new(loadedProduct, loadedAmount);
 
-    public decimal FuelCost(double distance) => (decimal)distance / 100;
+    public decimal FuelCost(double distance) => 0; //(decimal)distance / 100;
 
     public void GoTo(Station st)
     {
@@ -43,7 +45,7 @@ public class Captain
         Console.Error.WriteLine($"Captain {Name} went to {st} costing {n} fuel, remaining {this.Fuel}");
     }
 
-    public int TryRefuel(
+    public decimal TryRefuel(
         Station refinery,
         List<Station> stations)
     {
@@ -55,29 +57,39 @@ public class Captain
         var bought = refinery.PickupOutput(Product.Fuel, want);
         Fuel += bought;
         Console.Error.WriteLine($"[{Name}] Refuelled at {refinery} for {bought} fuel");
-        var costOfFuel = CostOfAinB(stations, new Portion(Product.Fuel, bought), Product.Fuel);
-        Wallet.Pay(refinery.Wallet, Product.Fuel, costOfFuel * bought);
+        // var costOfFuel = stations.CostOfAinB(new Portion(Product.Fuel, bought), Product.Fuel);
+        // Wallet.Pay(refinery.Wallet, Product.Fuel, costOfFuel * bought);
         return bought;
     }
 
-    public int Load(Station producer, Product product, int contractAmount)
+    public decimal Load(Station producer, Product product, decimal contractAmount)
     {
         var available = producer.PickupOutput(product, contractAmount);
         loadedAmount = available;
         loadedProduct = product;
-        Wallet.Pay(producer.Wallet, product, available);
+        var barterList = producer.Buy(product.Many(available));
+        foreach (var (product1, count) in barterList.Items)
+        {
+            Wallet.Pay(producer.Wallet, product1, count);
+        }
 
-        Console.Error.WriteLine($"Captain {Name} loaded {available} {loadedProduct} cargo");
+        producer.ReBalanceWallet();
+
+        Console.Error.WriteLine($"Captain {Name} loaded {available} {loadedProduct} cargo, bartered for {barterList}");
         return loadedAmount;
     }
 
-    public int Unload(Contract contract)
+    public decimal Unload(Contract contract)
     {
         var delivered = contract.Destination.DeliverInput(loadedProduct, loadedAmount);
         //contract.Destination.Wallet.Pay(Wallet, new Portion(loadedProduct, delivered))
-        var paidPortion = contract.PayPerUnit with { Count = contract.PayPerUnit.Count * loadedAmount };
-        contract.Destination.Wallet.Pay(Wallet, contract.PayPerUnit.Product, contract.PayPerUnit.Count * loadedAmount);
-        Console.Error.WriteLine($"Captain {Name} unloaded {delivered} {loadedProduct} cargo at {contract.Destination} and got paid {paidPortion}");
+        var barterRatio = contract.BarterFor.Scale(loadedAmount);
+        foreach (var (product, count) in barterRatio.Items)
+        {
+            contract.Destination.Wallet.Pay(Wallet, product, count);
+        }
+        contract.Destination.ReBalanceWallet();
+        Console.Error.WriteLine($"Captain {Name} unloaded {delivered} {loadedProduct} cargo at {contract.Destination} and bartered for {barterRatio}");
         loadedAmount -= delivered;
         if (loadedAmount > 0)
         {
@@ -85,25 +97,6 @@ public class Captain
         }
         // loadedAmount = 0;
         return delivered;
-    }
-
-    public decimal CostOfAinB(List<Station> stations, Portion thingToCalculate, Product inThisProduct)
-    {
-        var producer = stations.FirstOrDefault(x => x.Production.Output.Items.Any(p => p.Product == thingToCalculate.Product))!;
-
-        var portionOfOutput = producer.Production.Output.Items.FirstOrDefault(x => x.Product == thingToCalculate.Product)!.Count;
-
-        // Look at all inputs, and estimate their value recursively
-        var countOfAllInputs = producer.Production.Input.Items.Sum(input =>
-        {
-            if (input.Product == inThisProduct)
-            {
-                return (decimal)input.Count;
-            }
-
-            return CostOfAinB(stations, input, inThisProduct);
-        });
-        return countOfAllInputs / portionOfOutput * thingToCalculate.Count;
     }
 
     public void Act(
@@ -149,24 +142,34 @@ public class Captain
                     var distanceTotal = captain.Position.Distance(p.Position) +
                                         p.Position.Distance(contract.Destination.Position);
                     var inputStock = contract.Destination.inputs[contract.Product];
-                    var output = p.outputs[contract.Product];
+                    var outputStock = p.outputs[contract.Product];
                     var inputSpace = contract.Destination.Capacity - inputStock;
-                    var available = Math.Min(output, inputSpace);
-                    var inputCost = CostOfAinB(stations, new Portion(contract.Product, available), Product.Fuel);
-                    var fuelCost = FuelCost(distanceTotal);
-                    var pay = CostOfAinB(stations, contract.PayPerUnit, Product.Fuel) * available;
+                    var available = Math.Min(Math.Min(outputStock, inputSpace), this.Capacity);
+                    var currentValue = captain.Wallet.wallet.Values;
+                    var inputCost = p.Buy(contract.Product.Many(available));
+                    var afterPay = captain.Wallet
+                        .Try(inputCost)
+                        .Try(contract.BarterFor.Scale(available))
+                        .wallet.Values;
+                    // var inputCost = stations.CostToMake(contract.Product.Many(available));
+                    // var fuelCost = FuelCost(distanceTotal);
+
+                    // Create a metric that sums all the things in the wallet, and prefers a route
+                    // that will leave it more SUM positive than it started
                     return new
                     {
-                        inputCost,
-                        fuelCost,
-                        pay,
+                        //inputCost,
+                        //fuelCost,
+                        //pay = 1 * available,
                         contract.Product,
                         available,
                         position = p.Position,
                         contract,
                         producer = p,
                         distanceTotal = distanceTotal,
-                        importance = output - inputStock
+                        importance = outputStock - inputStock,
+                        profit = afterPay.Sum() - currentValue.Sum(),
+                        lowest = afterPay.Min()
                     };
                 }))
             // Filter out contracts that can't pay
@@ -175,26 +178,40 @@ public class Captain
             // .Where(x => x.sellPayout - x.buyCost - (decimal)x.distanceTotal * averageFuelPrice > 0)
             // Filter out empty contracts
             .Where(x => x.available > 0)
+            .Where(x => x.lowest > 0)
             //.Where(x => x.importance > 0)
-            .Where(x => x.pay > x.inputCost + x.fuelCost)
-            .OrderByDescending(x => x.pay - x.inputCost - x.fuelCost);
+            // .Where(x => x.pay > x.inputCost + x.fuelCost)
+            //.OrderByDescending(x => x.pay - x.inputCost - x.fuelCost);
             //.OrderByDescending(x => x.importance);
-            // .ThenBy(x => x.distanceTotal);
+            //.OrderByDescending(x => x.available);
+            .OrderByDescending(x => x.profit)
+            .ThenByDescending(x => x.lowest)
+            .ThenByDescending(x => x.importance);
+        // .ThenBy(x => x.distanceTotal);
 
         Console.Error.WriteLine($@"[{Name}] Available Routes: ");
-        Console.WriteLine(routes.Select(x => new
-        {
-            item = new Portion(x.Product, x.available),
-            from = x.producer,
-            to = x.contract.Destination,
-            pay = x.pay - x.inputCost - x.fuelCost,
-            x.distanceTotal
-        }).Join());
+        Console.WriteLine(routes
+            .Select(x => new
+            {
+                item = new Portion(x.Product, x.available),
+                from = x.producer,
+                to = x.contract.Destination,
+                x.profit,
+                x.importance,
+                x.lowest,
+                //pay = x.pay - x.inputCost - x.fuelCost,
+                //x.fuelCost,
+                //x.inputCost
+            })
+            //.OrderByDescending(x => x.inputCost)
+            .Join());
 
         // Pick the first one
-        // var foundRoute = routes.FirstOrDefault();
+        var foundRoute = routes.FirstOrDefault();
         // Pick a random first one
-        var foundRoute = routes.Where(x => x.available == routes.FirstOrDefault().available).RandomElement(random);
+        // var foundRoute = routes
+        //     //.Where(x => x.pay > x.inputCost + x.fuelCost)
+        //     .Where(x => x.available == routes.FirstOrDefault().available).RandomElement(random);
         // Console.Error.WriteLine($"[{Name}] Chosen {foundRoute}");
         if (foundRoute == null)
         {
@@ -219,13 +236,15 @@ public class Captain
         //     return
         // }
 
+        // Accept
         contracts.Remove(contract);
+        // Pay, half now, half when cargo is delivered?
         if (producer.Position != captain.Position)
         {
             // Go to producer
             captain.GoTo(producer);
             // TryRefuel if they have it
-            captain.TryRefuel(producer, stations);
+            //captain.TryRefuel(producer, stations);
         }
         captain.Load(producer, contract.Product, amountLoaded);
 
@@ -234,7 +253,7 @@ public class Captain
         // Sell to consumer
         captain.Unload(contract);
         // Refuel
-        captain.TryRefuel(contract.Destination, stations);
+        //captain.TryRefuel(contract.Destination, stations);
 
         var nearestFuel = stations
             .Where(s => s.outputs[Product.Fuel] > 0)

@@ -4,23 +4,25 @@
 
 namespace WorldSim
 {
+    using System.Linq;
+
     public enum Product
     {
         Gas,
         Food,
         Fuel,
-        Metal,
-        Parts,
-        Ship
+        // Metal,
+        // Parts,
+        // Ship
     }
 
     public static class ProductExt
     {
-        public static Portion Many(this Product product, int count) =>
+        public static Portion Many(this Product product, decimal count) =>
             new(product, count);
     }
 
-    public record Portion(Product Product, int Count = 1)
+    public record Portion(Product Product, decimal Count = 1)
     {
         /// <inheritdoc />
         public override string ToString() =>
@@ -42,6 +44,11 @@ namespace WorldSim
 
         public static implicit operator Ratio(Product product) =>
             new(new Portion(product));
+
+        public Ratio Scale(decimal loadedAmount)
+        {
+            return new Ratio(Items.Select(x => x with { Count = x.Count * loadedAmount }).ToArray());
+        }
     }
 
     public record Production(Ratio Input, Ratio Output)
@@ -49,7 +56,5 @@ namespace WorldSim
         /// <inheritdoc />
         public override string ToString() =>
             $"({Input}) -> ({Output})";
-        
-        //public double AsFractionOfOutput
     }
 }

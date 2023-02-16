@@ -21,6 +21,20 @@ public class Wallet
         return w;
     }
 
+    public Wallet Try(Ratio ratio)
+    {
+        var w = new Wallet
+        {
+            wallet = wallet.ToDictionary(x => x.Key, x => x.Value)
+        };
+        foreach (var (product, count) in ratio.Items)
+        {
+            w.wallet[product] += count;
+        }
+
+        return w;
+    }
+
     private void Add(Wallet w)
     {
         foreach (var (key, value) in w.wallet)

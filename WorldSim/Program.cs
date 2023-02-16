@@ -15,23 +15,22 @@ namespace WorldSim
 
         static void Main(string[] args)
         {
-            Station Farm(string name)
+            var stations = new List<Station>();
+            Station Farm(string name) => new Station
             {
-                var f = new Station
-                {
-                    Name = name,
-                    Position = RandomPoint(),
-                    Production = new Production(Product.Fuel, Product.Food.Many(6)),
-                };
-                f.inputs[Product.Fuel] = 100;
-                return f;
-            }
+                Name = name,
+                Position = RandomPoint(),
+                Production = new Production(Product.Fuel, Product.Food.Many(2)),
+                Stations = stations,
+                inputs = { [Product.Fuel] = 100 }
+            };
 
             Station Collector(string name) => new Station
             {
                 Name = name,
                 Position = RandomPoint(),
-                Production = new Production(Product.Food, Product.Gas.Many(3))
+                Production = new Production(Product.Food, Product.Gas.Many(2)),
+                Stations = stations,
             };
 
             Station Refinery(string name) => new Station
@@ -39,52 +38,62 @@ namespace WorldSim
                 Name = name,
                 Position = RandomPoint(),
                 Production = new Production(new Ratio(Product.Food, Product.Gas), Product.Fuel.Many(3)),
+                Stations = stations,
             };
 
-            Station Mine(string name) => new Station
-            {
-                Name = name,
-                Position = RandomPoint(),
-                Production = new Production(new Ratio(Product.Food, Product.Gas), Product.Metal.Many(1)),
-            };
+            // Station Mine(string name) => new Station
+            // {
+            //     Name = name,
+            //     Position = RandomPoint(),
+            //     Production = new Production(new Ratio(Product.Food, Product.Gas), Product.Metal.Many(2)),
+            //     Stations = stations,
+            // };
+            //
+            // Station Factory(string name) => new Station
+            // {
+            //     Name = name,
+            //     Position = RandomPoint(),
+            //     Production = new Production(new Ratio(Product.Food, Product.Metal, Product.Gas), Product.Parts.Many(3)),
+            //     Stations = stations,
+            // };
+            // Station Shipyard(string name) => new Station
+            // {
+            //     Name = name,
+            //     Position = RandomPoint(),
+            //     Production = new Production(new Ratio(
+            //             Product.Food.Many(10),
+            //             Product.Parts.Many(10),
+            //             Product.Gas.Many(10)),
+            //         Product.Ship.Many(1)),
+            //     Stations = stations,
+            //     //Capacity = 9999999,
+            // };
 
-            Station Factory(string name) => new Station
-            {
-                Name = name,
-                Position = RandomPoint(),
-                Production = new Production(new Ratio(Product.Food, Product.Metal, Product.Gas), Product.Parts.Many(3)),
-            };
-            Station Shipyard(string name) => new Station
-            {
-                Name = name,
-                Position = RandomPoint(),
-                Production = new Production(new Ratio(Product.Food.Many(10), Product.Parts.Many(10), Product.Gas.Many(10)), Product.Ship.Many(1)),
-            };
-
-
-            var stations = new List<Station>
+            stations.AddRange(new List<Station>
             {
                 // Raw
-                Mine("Mine A"),
+                // Mine("Mine A"),
                 Collector("Collector A"),
                 // Collector("Collector B"),
                 // Collector("Collector C"),
                 Farm("Farm A"),
 
                 // Produced
-                Factory("Factory A"),
+                // Factory("Factory A"),
                 Refinery("Refinery A"),
                 // Refinery("Refinery B"),
                 // Refinery("Refinery C"),
                 // Refinery("Refinery D"),
-                Shipyard("Shipyard A"),
-            };
+                // Shipyard("Shipyard A"),
+            });
+            Console.WriteLine(stations.CostToMake(Product.Fuel));
+            //return;
             var sim = new WorldSim(stations);
             var n = 0;
             while (n++ < 1000)
             {
                 sim.Run(Random);
-                Task.Delay(1000).Wait();
+                Task.Delay(500).Wait();
             }
         }
 
